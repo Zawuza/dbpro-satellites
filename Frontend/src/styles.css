@@ -3,3 +3,23 @@ body {
   margin: 0;
   padding: 0;
 }
+
+#map {
+  height: 80vh;
+  margin: 0 auto;
+  border: 3px solid gray;
+}
+
+.venues-search-result {
+  max-height: calc(80vh - 54px);
+  overflow-y: auto;
+  padding-right: 5px;
+}
+
+.venues-search-result img, .marker-popup-with-img img {
+  background-color: gray;
+}
+
+.card {
+  cursor: pointer;
+}

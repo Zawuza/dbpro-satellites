@@ -1,10 +1,11 @@
 import {Component, OnInit} from '@angular/core';
 import {HttpClient} from '@angular/common/http';
+import {ExploreResponse, Venue} from './explore.foursquare.response.types';
 
 declare var L;
 
-const CLIENT_ID = 'Y2TKAE3D5IQEJ5EVFJSOEOGZ45C05SUMZ4MKG0IOXTLK5Y1N\n';
-const CLIENT_SECRET = 'MVJGMDGLGX1YMJ3JTEYRHNZURM3GKUIT2MQBGFENKWLZRFKP';
+const CLIENT_ID = '1KUJLEW4UGEDVPKFFEQULUKMPSMQ2LUJJISXUXYMKC5THQMV';
+const CLIENT_SECRET = 'XGIFLYYSK353YB2PY0PUSFQNJYO2SSOKTFO43GLB0NG55AI4';
 const ZOOM_LEVEL_PARAMS = {
   3: {
     y_start: 12.004760925,
@@ -39,8 +40,7 @@ const BASE_URL = location.href.slice(0, -1);
 
 @Component({
   selector: 'app-root',
-  templateUrl: './app.component.html',
-  styleUrls: ['./app.component.css']
+  templateUrl: './app.component.html'
 })
 export class AppComponent implements OnInit {
 
@@ -49,6 +49,8 @@ export class AppComponent implements OnInit {
   private cache: any;
   private search_timeout: any;
   private map: any;
+
+  private markers = {};
 
   constructor(
     private http: HttpClient
@@ -64,18 +66,9 @@ export class AppComponent implements OnInit {
       0: []
     };
 
-    this.map = L.map('map').setView([52.514452, 13.350119], 20);
+    this.map = L.map('map').setView([52.514452, 13.350119], 15);
 
-    L.tileLayer(
-      'https://api.tiles.mapbox.com/v4/{id}/{z}/{x}/{y}.png?access_token={accessToken}',
-      {
-        attribution: '',
-        maxZoom: 15,
-        minZoom: 12,
-        id: 'mapbox.streets',
-        accessToken: 'pk.eyJ1IjoibmVja3N0ZXIiLCJhIjoiY2pwczZtdzdoMTFjNTQzbnZ3dnh0MmxsYSJ9.zx_MRMuZcEPnjvbIIEVskg'
-      }
-    ).addTo(this.map);
+    L.control.scale().addTo(this.map);
 
     this.loadPatchesToMap();
 
@@ -84,7 +77,8 @@ export class AppComponent implements OnInit {
     });
   }
 
-  searchForPlaces(query: string) {
+  searchForVenues(query: string) {
+    this.removeAllMarkersFromMap();
     clearTimeout(this.search_timeout);
 
     if (!query) {
@@ -95,52 +89,20 @@ export class AppComponent implements OnInit {
     this.venues = [];
 
     this.search_timeout = setTimeout(() => {
-      this.http.get(`https://api.foursquare.com/v2/venues/search`, {
+      this.http.get(`https://api.foursquare.com/v2/venues/explore`, {
         params: {
           client_id: CLIENT_ID,
           client_secret: CLIENT_SECRET,
           v: '20190131',
           near: 'Berlin',
           query: query,
-          limit: '3'
+          limit: '50'
         }
-      }).subscribe((res: any) => {
-        this.venues = res.response.venues;
-        for (const place of this.venues) {
-          this.http.get(`https://api.foursquare.com/v2/venues/${place.id}/photos`, {
-            params: {
-              client_id: CLIENT_ID,
-              client_secret: CLIENT_SECRET,
-              v: '20190131'
-            }
-          }).subscribe((img_res: any) => {
-            const item = img_res.response.photos.items[0];
-            if (!item) {
-              place.img = true;
-              return;
-            }
-            console.log(item.prefix + 'original' + item.suffix);
-            place.img = item.prefix + 'original' + item.suffix;
-          });
-        }
+      }).subscribe((res: ExploreResponse) => {
+        res.response.groups[0].items.forEach(item => this.venues.push(item.venue));
+        this.loadImagesToVenues(this.venues);
       });
     }, 1000);
-  }
-
-  showVenueByLocation(name: string, location: any, img: string) {
-    this.map.panTo([location.lat, location.lng]);
-    const marker = L.marker([location.lat, location.lng]).addTo(this.map).bindPopup(
-      `<div class="text-center"><img width="100px" src="${img}"/></div><p class="text-center">${name}</p>`, {
-        closeOnClick: false,
-        autoClose: false
-      });
-
-    marker.on('mouseover', function () {
-      this.openPopup();
-    });
-    marker.on('mouseout', function () {
-      this.closePopup();
-    });
   }
 
   private loadPatchesToMap() {
@@ -206,5 +168,67 @@ export class AppComponent implements OnInit {
       bottom: moveBottom,
       id: id
     };
+  }
+
+  private placeVenueMarkerOnMap(venue: Venue, search?: boolean) {
+
+    const geo_pos = [venue.location.lat, venue.location.lng];
+
+    if (Object.keys(this.markers).includes(venue.id)) {
+      if (search) {
+        const m = this.markers[venue.id];
+        this.map.panTo(geo_pos);
+        this.closeAllMarkersOnMap();
+        m.openPopup();
+      }
+      return;
+    }
+
+    const marker = L.marker(geo_pos).addTo(this.map).bindPopup(
+      `
+        <div class="text-center marker-popup-with-img">
+          <img width="100px" src="${venue['img']}"/>
+        </div>
+        <p class="text-center">${venue.name}</p>
+      `, {
+        closeOnClick: false,
+        autoClose: false
+      });
+
+    marker.on('mouseover', function () {
+      this.openPopup();
+    });
+    marker.on('mouseout', function () {
+      this.closePopup();
+    });
+
+    this.markers[venue.id] = marker;
+  }
+
+  private closeAllMarkersOnMap() {
+    for (const marker of Object.keys(this.markers)) {
+      this.markers[marker].closePopup();
+    }
+  }
+
+  private removeAllMarkersFromMap() {
+    for (const marker of Object.keys(this.markers)) {
+      this.map.removeLayer(this.markers[marker]);
+    }
+
+    this.markers = {};
+  }
+
+  private loadImagesToVenues(venues: Venue[]) {
+    for (const venue of venues) {
+      const icon = venue.categories && venue.categories[0] && venue.categories[0].icon;
+
+      if (!icon) {
+        continue;
+      }
+
+      venue.img = icon.prefix + '64' + icon.suffix;
+      this.placeVenueMarkerOnMap(venue);
+    }
   }
 }
