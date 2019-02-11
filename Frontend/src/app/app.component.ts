@@ -66,7 +66,10 @@ export class AppComponent implements OnInit {
       0: []
     };
 
-    this.map = L.map('map').setView([52.514452, 13.350119], 15);
+    this.map = L.map('map', {
+      minZoom: 12,
+      maxZoom: 15
+    }).setView([52.514452, 13.350119], 15);
 
     L.control.scale().addTo(this.map);
 
